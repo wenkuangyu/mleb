@@ -1,0 +1,17 @@
+Package: mleb
+Type: Package
+Title: Modified Likelihood Empirical Bayes Estimator of Normal Means
+Version: 0.1.0
+Authors@R: person("Kuangyu Wen", email = "kweneco@gmail.com", role = c("aut", "cre"))
+Description: Implements modified likelihood empirical Bayes estimation with parameter selection using SURE or plug-in methods.
+License: MIT + file LICENSE
+Imports:
+    Rcpp (>= 1.0.0)
+LinkingTo:
+    Rcpp,
+    RcppArmadillo
+Encoding: UTF-8
+Config/roxygen2/version: 8.0.0
+RoxygenNote: 7.3.3
+URL: https://github.com/wenkuangyu/mleb
+BugReports: https://github.com/wenkuangyu/mleb/issues

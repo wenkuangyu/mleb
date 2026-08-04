@@ -1,0 +1,11 @@
+# Optimization flags for all C++ versions
+CXX14FLAGS = -O3 -march=native -funroll-loops
+CXX17FLAGS = -O3 -march=native -funroll-loops
+CXXFLAGS   = -O3 -march=native -funroll-loops
+
+# R package compile flags with Armadillo configuration
+PKG_CXXFLAGS = -O3 -march=native -funroll-loops \
+               -DARMA_USE_BLAS -DARMA_USE_LAPACK -DARMA_NO_DEBUG
+
+# Link BLAS and LAPACK for Unix-like systems
+PKG_LIBS = -llapack -lblas
