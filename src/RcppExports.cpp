@@ -81,6 +81,45 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// bickel_collins_cpp
+List bickel_collins_cpp(const arma::vec& X, const arma::mat& W, const arma::vec& sigma, double h, Rcpp::Nullable<arma::vec> beta_init, int maxit, double abstol, double reltol, int trace);
+RcppExport SEXP _mleb_bickel_collins_cpp(SEXP XSEXP, SEXP WSEXP, SEXP sigmaSEXP, SEXP hSEXP, SEXP beta_initSEXP, SEXP maxitSEXP, SEXP abstolSEXP, SEXP reltolSEXP, SEXP traceSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type W(WSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type sigma(sigmaSEXP);
+    Rcpp::traits::input_parameter< double >::type h(hSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<arma::vec> >::type beta_init(beta_initSEXP);
+    Rcpp::traits::input_parameter< int >::type maxit(maxitSEXP);
+    Rcpp::traits::input_parameter< double >::type abstol(abstolSEXP);
+    Rcpp::traits::input_parameter< double >::type reltol(reltolSEXP);
+    Rcpp::traits::input_parameter< int >::type trace(traceSEXP);
+    rcpp_result_gen = Rcpp::wrap(bickel_collins_cpp(X, W, sigma, h, beta_init, maxit, abstol, reltol, trace));
+    return rcpp_result_gen;
+END_RCPP
+}
+// bickel_collins_binned_cpp
+List bickel_collins_binned_cpp(const arma::vec& X, const arma::mat& W, const arma::vec& sigma, double h, int n_grid, Rcpp::Nullable<arma::vec> beta_init, int maxit, double abstol, double reltol, int trace);
+RcppExport SEXP _mleb_bickel_collins_binned_cpp(SEXP XSEXP, SEXP WSEXP, SEXP sigmaSEXP, SEXP hSEXP, SEXP n_gridSEXP, SEXP beta_initSEXP, SEXP maxitSEXP, SEXP abstolSEXP, SEXP reltolSEXP, SEXP traceSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type W(WSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type sigma(sigmaSEXP);
+    Rcpp::traits::input_parameter< double >::type h(hSEXP);
+    Rcpp::traits::input_parameter< int >::type n_grid(n_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<arma::vec> >::type beta_init(beta_initSEXP);
+    Rcpp::traits::input_parameter< int >::type maxit(maxitSEXP);
+    Rcpp::traits::input_parameter< double >::type abstol(abstolSEXP);
+    Rcpp::traits::input_parameter< double >::type reltol(reltolSEXP);
+    Rcpp::traits::input_parameter< int >::type trace(traceSEXP);
+    rcpp_result_gen = Rcpp::wrap(bickel_collins_binned_cpp(X, W, sigma, h, n_grid, beta_init, maxit, abstol, reltol, trace));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_mleb_plugin_mleb", (DL_FUNC) &_mleb_plugin_mleb, 2},
@@ -88,6 +127,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_mleb_kde_tweedie", (DL_FUNC) &_mleb_kde_tweedie, 3},
     {"_mleb_kde_tweedie_binned", (DL_FUNC) &_mleb_kde_tweedie_binned, 5},
     {"_mleb_optimize_SURE_binned_lbfgsb", (DL_FUNC) &_mleb_optimize_SURE_binned_lbfgsb, 6},
+    {"_mleb_bickel_collins_cpp", (DL_FUNC) &_mleb_bickel_collins_cpp, 9},
+    {"_mleb_bickel_collins_binned_cpp", (DL_FUNC) &_mleb_bickel_collins_binned_cpp, 10},
     {NULL, NULL, 0}
 };
 

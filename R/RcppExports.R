@@ -21,3 +21,11 @@ optimize_SURE_binned_lbfgsb <- function(X, M = 1024L, pad_ratio = 0.05, max_iter
     .Call(`_mleb_optimize_SURE_binned_lbfgsb`, X, M, pad_ratio, max_iters, factr, pgtol)
 }
 
+bickel_collins_cpp <- function(X, W, sigma, h, beta_init = NULL, maxit = 500L, abstol = 1e-16, reltol = 1e-8, trace = 0L) {
+    .Call(`_mleb_bickel_collins_cpp`, X, W, sigma, h, beta_init, maxit, abstol, reltol, trace)
+}
+
+bickel_collins_binned_cpp <- function(X, W, sigma, h, n_grid = 1024L, beta_init = NULL, maxit = 500L, abstol = 1e-16, reltol = 1e-8, trace = 0L) {
+    .Call(`_mleb_bickel_collins_binned_cpp`, X, W, sigma, h, n_grid, beta_init, maxit, abstol, reltol, trace)
+}
+

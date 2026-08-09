@@ -431,7 +431,7 @@ List optimize_SURE_lbfgsb(const NumericVector& X,
   double b_upper = std::sqrt(6.0 * var_X);
   double s_upper = 6.0;
   
-  double lower_bounds[2] = {1e-5, 0.0};
+  double lower_bounds[2] = {0.01 * std::pow(N, -1.0 / 7.0), 0.0};
   double upper_bounds[2] = {b_upper, s_upper};
   int nbd[2] = {2, 2};
   
@@ -813,6 +813,8 @@ List optimize_SURE_binned_lbfgsb(const NumericVector& X, int M = 1024, double pa
   double s_upper = 6.0;
   
   double lower_bounds[2] = {2.0 * delta, 0.0};
+  //double lower_bounds[2] = {0.01 * std::pow(N, -1.0 / 7.0), 0.0};
+  
   double upper_bounds[2] = {b_upper, s_upper};
   int nbd[2] = {2, 2};
   
@@ -842,5 +844,321 @@ List optimize_SURE_binned_lbfgsb(const NumericVector& X, int M = 1024, double pa
                                                     Named("fn_counts") = fncount,
                                                     Named("gr_counts") = grcount,
                                                     Named("message")   = std::string(msg)
+  );
+}
+
+
+// ============================================================================
+// SECTION 5: Select beta by minimizing Bickel-Collins criterion in regression model
+// ============================================================================
+
+// Struct & Cache for Exact Bickel-Collins Criterion (O(N^2))
+struct BickelCollinsExactData {
+  const arma::vec* X;
+  const arma::mat* W;
+  const arma::vec* sigma;
+  const arma::mat* W_tilde;
+  double h;
+  double eps;
+  
+  arma::vec cached_beta;
+  double cached_value;
+  arma::vec cached_grad;
+  bool cache_valid;
+  
+  BickelCollinsExactData() : cache_valid(false) {}
+  
+  void evaluate(int npar, const double* par) {
+    if (cache_valid && cached_beta.n_elem == static_cast<unsigned int>(npar)) {
+      bool same = true;
+      for (int k = 0; k < npar; ++k) {
+        if (cached_beta[k] != par[k]) { same = false; break; }
+      }
+      if (same) return;
+    }
+    
+    cached_beta = arma::vec(const_cast<double*>(par), npar, true);
+    int n = X->n_elem;
+    double double_n = static_cast<double>(n);
+    
+    arma::vec Z = (*X - *W * cached_beta) / *sigma;
+    double inv_h = 1.0 / h;
+    double inv_h2 = inv_h * inv_h;
+    
+    arma::vec s(n);
+    arma::mat U(n, n);
+    
+    for (int i = 0; i < n; ++i) {
+      double num = 0.0, den = 0.0;
+      for (int j = 0; j < n; ++j) {
+        double diff = (Z[i] - Z[j]) * inv_h;
+        double w = std::exp(-0.5 * diff * diff);
+        den += w;
+        num += diff * w;
+      }
+      if (den < eps) den = eps;
+      s[i] = -inv_h * (num / den);
+      
+      for (int j = 0; j < n; ++j) {
+        double diff = (Z[i] - Z[j]) * inv_h;
+        double w = std::exp(-0.5 * diff * diff);
+        double C_ij = w / den;
+        U(i, j) = -inv_h2 * C_ij * (diff * diff - 1.0 + h * s[i] * diff);
+      }
+    }
+    
+    double score_sq_sum = arma::dot(s, s);
+    cached_value = 1.0 - (score_sq_sum / double_n);
+    
+    arma::mat M = arma::repmat(s, 1, n) % U;
+    arma::vec r = arma::sum(M, 1);
+    arma::vec c = arma::sum(M, 0).t();
+    
+    cached_grad = (2.0 / double_n) * W_tilde->t() * (c - r);
+    cache_valid = true;
+  }
+};
+
+// Dedicated C-style callbacks for exact criterion
+inline double bickel_collins_fn_exact(int npar, double *par, void *ex) {
+  BickelCollinsExactData* d = static_cast<BickelCollinsExactData*>(ex);
+  d->evaluate(npar, par);
+  return d->cached_value;
+}
+
+inline void bickel_collins_gr_exact(int npar, double *par, double *gr, void *ex) {
+  BickelCollinsExactData* d = static_cast<BickelCollinsExactData*>(ex);
+  d->evaluate(npar, par);
+  for (int k = 0; k < npar; ++k) {
+    gr[k] = d->cached_grad[k];
+  }
+}
+
+// Struct & Cache for Binned Bickel-Collins Criterion (O(N + M^2))
+struct BickelCollinsBinnedData {
+  const arma::vec* X;
+  const arma::mat* W;
+  const arma::vec* sigma;
+  const arma::mat* W_tilde;
+  double h;
+  int n_grid;
+  double eps;
+  
+  arma::vec cached_beta;
+  double cached_value;
+  arma::vec cached_grad;
+  bool cache_valid;
+  
+  BickelCollinsBinnedData() : cache_valid(false) {}
+  
+  void evaluate(int npar, const double* par) {
+    if (cache_valid && cached_beta.n_elem == static_cast<unsigned int>(npar)) {
+      bool same = true;
+      for (int k = 0; k < npar; ++k) {
+        if (cached_beta[k] != par[k]) { same = false; break; }
+      }
+      if (same) return;
+    }
+    
+    cached_beta = arma::vec(const_cast<double*>(par), npar, true);
+    int n = X->n_elem;
+    double double_n = static_cast<double>(n);
+    
+    arma::vec Z = (*X - *W * cached_beta) / *sigma;
+    
+    double z_min = Z.min() - 6.0 * h;
+    double z_max = Z.max() + 6.0 * h;
+    double delta = (z_max - z_min) / (n_grid - 1);
+    double inv_delta = 1.0 / delta;
+    
+    arma::vec grid_nodes = arma::linspace(z_min, z_max, n_grid);
+    arma::vec counts(n_grid, arma::fill::zeros);
+    
+    arma::uvec k_idx(n);
+    arma::vec t_val(n);
+    
+    for (int i = 0; i < n; ++i) {
+      double pos = (Z[i] - z_min) * inv_delta;
+      int k = static_cast<int>(std::floor(pos));
+      if (k < 0) k = 0;
+      if (k >= n_grid - 1) k = n_grid - 2;
+      
+      double t = pos - k;
+      k_idx[i] = k;
+      t_val[i] = t;
+      
+      counts[k]     += (1.0 - t);
+      counts[k + 1] += t;
+    }
+    
+    double inv_h = 1.0 / h;
+    arma::vec s_grid(n_grid);
+    arma::mat V_grid(n_grid, n_grid);
+    
+    for (int m = 0; m < n_grid; ++m) {
+      double num = 0.0, den = 0.0;
+      for (int l = 0; l < n_grid; ++l) {
+        if (counts[l] == 0.0) continue;
+        double diff = (grid_nodes[m] - grid_nodes[l]) * inv_h;
+        double w = std::exp(-0.5 * diff * diff);
+        den += counts[l] * w;
+        num += counts[l] * diff * w;
+      }
+      if (den < eps) den = eps;
+      s_grid[m] = -inv_h * (num / den);
+      
+      for (int l = 0; l < n_grid; ++l) {
+        double diff = (grid_nodes[m] - grid_nodes[l]) * inv_h;
+        double w = std::exp(-0.5 * diff * diff);
+        V_grid(m, l) = -inv_h * (w / den) * (diff + h * s_grid[m]);
+      }
+    }
+    
+    arma::vec s_obs(n);
+    arma::vec s_tilde(n_grid, arma::fill::zeros);
+    
+    for (int i = 0; i < n; ++i) {
+      int k = k_idx[i];
+      double t = t_val[i];
+      double s_i = (1.0 - t) * s_grid[k] + t * s_grid[k + 1];
+      s_obs[i] = s_i;
+      
+      s_tilde[k]     += (1.0 - t) * s_i;
+      s_tilde[k + 1] += t * s_i;
+    }
+    
+    double score_sq_sum = arma::dot(s_obs, s_obs);
+    cached_value = 1.0 - (score_sq_sum / double_n);
+    
+    arma::vec q = V_grid.t() * s_tilde;
+    
+    arma::vec D(n);
+    for (int i = 0; i < n; ++i) {
+      int k = k_idx[i];
+      double ds = (s_grid[k + 1] - s_grid[k]) * inv_delta;
+      double dq = (q[k + 1] - q[k]) * inv_delta;
+      D[i] = s_obs[i] * ds + dq;
+    }
+    
+    cached_grad = (2.0 / double_n) * W_tilde->t() * D;
+    cache_valid = true;
+  }
+};
+
+// Dedicated C-style callbacks for binned criterion
+inline double bickel_collins_fn_binned(int npar, double *par, void *ex) {
+  BickelCollinsBinnedData* d = static_cast<BickelCollinsBinnedData*>(ex);
+  d->evaluate(npar, par);
+  return d->cached_value;
+}
+
+inline void bickel_collins_gr_binned(int npar, double *par, double *gr, void *ex) {
+  BickelCollinsBinnedData* d = static_cast<BickelCollinsBinnedData*>(ex);
+  d->evaluate(npar, par);
+  for (int k = 0; k < npar; ++k) {
+    gr[k] = d->cached_grad[k];
+  }
+}
+
+// [[Rcpp::export]]
+List bickel_collins_cpp(const arma::vec& X,
+                        const arma::mat& W,
+                        const arma::vec& sigma,
+                        double h,
+                        Rcpp::Nullable<arma::vec> beta_init = R_NilValue,
+                        int maxit = 500,
+                        double abstol = 1e-16,
+                        double reltol = 1e-8,
+                        int trace = 0) {
+  int p = W.n_cols;
+  
+  arma::mat W_tilde = W;
+  W_tilde.each_col() /= sigma;
+  
+  arma::vec beta;
+  if (beta_init.isNotNull()) {
+    beta = Rcpp::as<arma::vec>(beta_init);
+  } else {
+    beta = arma::solve(W_tilde, X / sigma);
+  }
+  
+  BickelCollinsExactData data;
+  data.X = &X;
+  data.W = &W;
+  data.sigma = &sigma;
+  data.W_tilde = &W_tilde;
+  data.h = h;
+  data.eps = 1e-12;
+  
+  double fmin = 0.0;
+  std::vector<int> mask(p, 1);
+  int fncount = 0;
+  int grcount = 0;
+  int fail = 0;
+  int nreport = 10;
+  
+  vmmin(p, beta.memptr(), &fmin, bickel_collins_fn_exact, bickel_collins_gr_exact, 
+        maxit, trace, mask.data(), abstol, reltol, nreport, 
+        &data, &fncount, &grcount, &fail);
+  
+  return List::create(
+    Named("beta_hat")    = beta,
+    Named("risk")        = fmin,
+    Named("h_used")      = h,
+    Named("counts")      = List::create(Named("function") = fncount, Named("gradient") = grcount),
+          Named("convergence") = fail
+  );
+}
+
+// [[Rcpp::export]]
+List bickel_collins_binned_cpp(const arma::vec& X,
+                               const arma::mat& W,
+                               const arma::vec& sigma,
+                               double h,
+                               int n_grid = 1024,
+                               Rcpp::Nullable<arma::vec> beta_init = R_NilValue,
+                               int maxit = 500,
+                               double abstol = 1e-16,
+                               double reltol = 1e-8,
+                               int trace = 0) {
+  int p = W.n_cols;
+  
+  arma::mat W_tilde = W;
+  W_tilde.each_col() /= sigma;
+  
+  arma::vec beta;
+  if (beta_init.isNotNull()) {
+    beta = Rcpp::as<arma::vec>(beta_init);
+  } else {
+    beta = arma::solve(W_tilde, X / sigma);
+  }
+  
+  BickelCollinsBinnedData data;
+  data.X = &X;
+  data.W = &W;
+  data.sigma = &sigma;
+  data.W_tilde = &W_tilde;
+  data.h = h;
+  data.n_grid = n_grid;
+  data.eps = 1e-12;
+  
+  double fmin = 0.0;
+  std::vector<int> mask(p, 1);
+  int fncount = 0;
+  int grcount = 0;
+  int fail = 0;
+  int nreport = 10;
+  
+  vmmin(p, beta.memptr(), &fmin, bickel_collins_fn_binned, bickel_collins_gr_binned, 
+        maxit, trace, mask.data(), abstol, reltol, nreport, 
+        &data, &fncount, &grcount, &fail);
+  
+  return List::create(
+    Named("beta_hat")    = beta,
+    Named("risk")        = fmin,
+    Named("h_used")      = h,
+    Named("n_grid")      = n_grid,
+    Named("counts")      = List::create(Named("function") = fncount, Named("gradient") = grcount),
+          Named("convergence") = fail
   );
 }
